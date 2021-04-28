@@ -1,5 +1,5 @@
 /* Copyright (c) 2000, 2019, Oracle and/or its affiliates.
-   Copyright (c) 2010, 2020, MariaDB Corporation.
+   Copyright (c) 2010, 2021, MariaDB Corporation
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -966,6 +966,10 @@ public:
 
   void init_query();
   st_select_lex* outer_select();
+  const st_select_lex* first_select() const
+  {
+    return reinterpret_cast<const st_select_lex*>(slave);
+  }
   st_select_lex* first_select()
   {
     return reinterpret_cast<st_select_lex*>(slave);
@@ -1378,7 +1382,8 @@ public:
   }
   inline bool is_subquery_function() { return master_unit()->item != 0; }
 
-  bool mark_as_dependent(THD *thd, st_select_lex *last, Item *dependency);
+  bool mark_as_dependent(THD *thd, st_select_lex *last,
+                         Item_ident *dependency);
 
   void set_braces(bool value)
   {
@@ -1513,6 +1518,8 @@ public:
 
   bool save_leaf_tables(THD *thd);
   bool save_prep_leaf_tables(THD *thd);
+
+  void set_unique_exclude();
 
   bool is_merged_child_of(st_select_lex *ancestor);
 
@@ -3144,7 +3151,8 @@ public:
 struct LEX: public Query_tables_list
 {
   SELECT_LEX_UNIT unit;                         /* most upper unit */
-  inline SELECT_LEX *first_select_lex() {return unit.first_select();}
+  SELECT_LEX *first_select_lex() { return unit.first_select(); }
+  const SELECT_LEX *first_select_lex() const { return unit.first_select(); }
 
 private:
   SELECT_LEX builtin_select;
@@ -4428,6 +4436,25 @@ public:
         return true;
     }
     return false;
+  }
+
+  bool create_like() const
+  {
+    DBUG_ASSERT(!create_info.like() ||
+                !first_select_lex()->item_list.elements);
+    return create_info.like();
+  }
+
+  bool create_select() const
+  {
+    DBUG_ASSERT(!create_info.like() ||
+                !first_select_lex()->item_list.elements);
+    return first_select_lex()->item_list.elements;
+  }
+
+  bool create_simple() const
+  {
+    return !create_like() && !create_select();
   }
 
   SELECT_LEX *exclude_last_select();

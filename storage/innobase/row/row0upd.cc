@@ -693,7 +693,8 @@ row_upd_build_difference_binary(
 	n_diff = 0;
 
 	if (!offsets) {
-		offsets = rec_get_offsets(rec, index, offsets_, true,
+		offsets = rec_get_offsets(rec, index, offsets_,
+					  index->n_core_fields,
 					  ULINT_UNDEFINED, &heap);
 	} else {
 		ut_ad(rec_offs_validate(rec, index, offsets));
@@ -1894,7 +1895,8 @@ row_upd_store_row(
 
 	rec = btr_pcur_get_rec(node->pcur);
 
-	offsets = rec_get_offsets(rec, clust_index, offsets_, true,
+	offsets = rec_get_offsets(rec, clust_index, offsets_,
+				  clust_index->n_core_fields,
 				  ULINT_UNDEFINED, &heap);
 
 	if (dict_table_has_atomic_blobs(node->table)) {
@@ -2133,7 +2135,7 @@ row_upd_sec_index_entry(
 			    && !wsrep_thd_is_BF(trx->mysql_thd, FALSE)) {
 
 				rec_offs* offsets = rec_get_offsets(
-					rec, index, NULL, true,
+					rec, index, NULL, index->n_core_fields,
 					ULINT_UNDEFINED, &heap);
 
 				err = wsrep_row_upd_check_foreign_constraints(
@@ -2176,12 +2178,9 @@ row_upd_sec_index_entry(
 		ut_ad(err == DB_SUCCESS);
 
 		if (referenced) {
-
-			rec_offs* offsets;
-
-			offsets = rec_get_offsets(
-				rec, index, NULL, true, ULINT_UNDEFINED,
-				&heap);
+			rec_offs* offsets = rec_get_offsets(
+				rec, index, NULL, index->n_core_fields,
+				ULINT_UNDEFINED, &heap);
 
 			/* NOTE that the following call loses
 			the position of pcur ! */
@@ -2432,7 +2431,8 @@ row_upd_clust_rec_by_insert(
 		we update the primary key.  Delete-mark the old record
 		in the clustered index and prepare to insert a new entry. */
 		rec = btr_cur_get_rec(btr_cur);
-		offsets = rec_get_offsets(rec, index, offsets, true,
+		offsets = rec_get_offsets(rec, index, offsets,
+					  index->n_core_fields,
 					  ULINT_UNDEFINED, &heap);
 		ut_ad(page_rec_is_user_rec(rec));
 
@@ -2756,6 +2756,7 @@ row_upd_clust_step(
 {
 	dict_index_t*	index;
 	btr_pcur_t*	pcur;
+	ibool		success;
 	dberr_t		err;
 	mtr_t		mtr;
 	rec_t*		rec;
@@ -2815,13 +2816,42 @@ row_upd_clust_step(
 		mode = BTR_MODIFY_LEAF;
 	}
 
-	if (!btr_pcur_restore_position(mode, pcur, &mtr)) {
+	success = btr_pcur_restore_position(mode, pcur, &mtr);
+
+	if (!success) {
 		err = DB_RECORD_NOT_FOUND;
 		goto exit_func;
 	}
 
+	/* If this is a row in SYS_INDEXES table of the data dictionary,
+	then we have to free the file segments of the index tree associated
+	with the index */
+
+	if (node->is_delete == PLAIN_DELETE
+	    && node->table->id == DICT_INDEXES_ID) {
+
+		ut_ad(!dict_index_is_online_ddl(index));
+
+		dict_drop_index_tree(pcur, trx, &mtr);
+
+		mtr.commit();
+
+		mtr.start();
+		index->set_modified(mtr);
+
+		success = btr_pcur_restore_position(BTR_MODIFY_LEAF, pcur,
+						    &mtr);
+		if (!success) {
+			err = DB_ERROR;
+
+			mtr.commit();
+
+			return(err);
+		}
+	}
+
 	rec = btr_pcur_get_rec(pcur);
-	offsets = rec_get_offsets(rec, index, offsets_, true,
+	offsets = rec_get_offsets(rec, index, offsets_, index->n_core_fields,
 				  ULINT_UNDEFINED, &heap);
 
 	if (!flags && !node->has_clust_rec_x_lock) {

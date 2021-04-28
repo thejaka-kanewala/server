@@ -1,5 +1,5 @@
 # Copyright (c) 2006, 2017, Oracle and/or its affiliates.
-# Copyright (c) 2008, 2020, MariaDB Corporation.
+# Copyright (c) 2008, 2021, MariaDB Corporation.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -140,7 +140,7 @@ ENDIF()
 # NUMA
 SET(WITH_NUMA "AUTO" CACHE STRING "Build with non-uniform memory access, allowing --innodb-numa-interleave. Options are ON|OFF|AUTO. ON = enabled (requires NUMA library), OFF = disabled, AUTO = enabled if NUMA library found.")
 
-SET(MYSQL_MAINTAINER_MODE "AUTO" CACHE STRING "MySQL maintainer-specific development environment. Options are: ON OFF AUTO.")
+SET(MYSQL_MAINTAINER_MODE "AUTO" CACHE STRING "Enable MariaDB maintainer-specific warnings. One of: NO (warnings are disabled) WARN (warnings are enabled) ERR (warnings are errors) AUTO (warnings are errors in Debug only)")
 
 # Packaging
 IF (NOT CPACK_GENERATOR)
@@ -393,7 +393,7 @@ CHECK_PCRE()
 
 CHECK_SYSTEMD()
 
-IF(CMAKE_CROSSCOMPILING)
+IF(CMAKE_CROSSCOMPILING AND NOT DEFINED CMAKE_CROSSCOMPILING_EMULATOR)
   SET(IMPORT_EXECUTABLES "IMPORTFILE-NOTFOUND" CACHE FILEPATH "Path to import_executables.cmake from a native build")
   INCLUDE(${IMPORT_EXECUTABLES})
 ENDIF()
@@ -475,7 +475,7 @@ ADD_SUBDIRECTORY(scripts)
 ADD_SUBDIRECTORY(support-files)
 ADD_SUBDIRECTORY(extra/aws_sdk)
 
-IF(NOT CMAKE_CROSSCOMPILING)
+IF(NOT CMAKE_CROSSCOMPILING OR DEFINED CMAKE_CROSSCOMPILING_EMULATOR)
   SET(EXPORTED comp_err comp_sql factorial)
   IF(NOT WITHOUT_SERVER)
     SET(EXPORTED ${EXPORTED} gen_lex_hash gen_lex_token)
@@ -527,8 +527,7 @@ ADD_CUSTOM_TARGET(INFO_BIN ALL
   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
-INSTALL_DOCUMENTATION(README.md CREDITS COPYING THIRDPARTY
-                      EXCEPTIONS-CLIENT COMPONENT Readme)
+INSTALL_DOCUMENTATION(README.md CREDITS COPYING THIRDPARTY COMPONENT Readme)
 
 # MDEV-6526 these files are not installed anymore
 #INSTALL_DOCUMENTATION(${CMAKE_BINARY_DIR}/Docs/INFO_SRC

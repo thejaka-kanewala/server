@@ -1,7 +1,7 @@
 /*****************************************************************************
 
 Copyright (c) 1997, 2017, Oracle and/or its affiliates. All Rights Reserved.
-Copyright (c) 2017, 2020, MariaDB Corporation.
+Copyright (c) 2017, 2021, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -27,7 +27,6 @@ Created 3/14/1997 Heikki Tuuri
 #include "row0purge.h"
 #include "fsp0fsp.h"
 #include "mach0data.h"
-#include "dict0crea.h"
 #include "dict0stats.h"
 #include "trx0rseg.h"
 #include "trx0trx.h"
@@ -117,27 +116,13 @@ row_purge_remove_clust_if_poss_low(
 		return true;
 	}
 
-	if (node->table->id == DICT_INDEXES_ID) {
-		/* If this is a record of the SYS_INDEXES table, then
-		we have to free the file segments of the index tree
-		associated with the index */
-		dict_drop_index_tree(&node->pcur, nullptr, &mtr);
-		mtr.commit();
-		mtr.start();
-		index->set_modified(mtr);
-
-		if (!row_purge_reposition_pcur(mode, node, &mtr)) {
-			mtr.commit();
-			return true;
-		}
-	}
-
 	rec_t* rec = btr_pcur_get_rec(&node->pcur);
 	rec_offs offsets_[REC_OFFS_NORMAL_SIZE];
 	rec_offs_init(offsets_);
 	mem_heap_t* heap = NULL;
-	rec_offs* offsets = rec_get_offsets(
-		rec, index, offsets_, true, ULINT_UNDEFINED, &heap);
+	rec_offs* offsets = rec_get_offsets(rec, index, offsets_,
+					    index->n_core_fields,
+					    ULINT_UNDEFINED, &heap);
 	bool success = true;
 
 	if (node->roll_ptr != row_get_rec_roll_ptr(rec, index, offsets)) {
@@ -616,7 +601,7 @@ row_purge_skip_uncommitted_virtual_index(
 	not support LOCK=NONE when adding an index on newly
 	added virtual column.*/
 	while (index != NULL && dict_index_has_virtual(index)
-	       && !index->is_committed() && index->has_new_v_col) {
+	       && !index->is_committed() && index->has_new_v_col()) {
 		index = dict_table_get_next_index(index);
 	}
 }
@@ -682,7 +667,8 @@ static void row_purge_reset_trx_id(purge_node_t* node, mtr_t* mtr)
 		rec_offs offsets_[REC_OFFS_HEADER_SIZE + MAX_REF_PARTS + 2];
 		rec_offs_init(offsets_);
 		rec_offs*	offsets = rec_get_offsets(
-			rec, index, offsets_, true, trx_id_pos + 2, &heap);
+			rec, index, offsets_, index->n_core_fields,
+			trx_id_pos + 2, &heap);
 		ut_ad(heap == NULL);
 
 		ut_ad(dict_index_get_nth_field(index, trx_id_pos)
@@ -1214,7 +1200,7 @@ purge_node_t::validate_pcur()
 	dict_index_t*	clust_index = pcur.btr_cur.index;
 
 	rec_offs* offsets = rec_get_offsets(
-		pcur.old_rec, clust_index, NULL, true,
+		pcur.old_rec, clust_index, NULL, pcur.old_n_core_fields,
 		pcur.old_n_fields, &heap);
 
 	/* Here we are comparing the purge ref record and the stored initial

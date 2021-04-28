@@ -2653,9 +2653,7 @@ Item_sp::Item_sp(THD *thd, Name_resolution_context *context_arg,
   dummy_table= (TABLE*) thd->calloc(sizeof(TABLE) + sizeof(TABLE_SHARE) +
                                     sizeof(Query_arena));
   dummy_table->s= (TABLE_SHARE*) (dummy_table + 1);
-  /* TODO(cvicentiu) Move this sp_query_arena in the class as a direct member.
-     Currently it can not be done due to header include dependencies. */
-  sp_query_arena= (Query_arena *) (dummy_table->s + 1);
+  sp_query_arena= new(dummy_table->s + 1) Query_arena();
   memset(&sp_mem_root, 0, sizeof(sp_mem_root));
 }
 
@@ -2666,7 +2664,7 @@ Item_sp::Item_sp(THD *thd, Item_sp *item):
   dummy_table= (TABLE*) thd->calloc(sizeof(TABLE)+ sizeof(TABLE_SHARE) +
                                     sizeof(Query_arena));
   dummy_table->s= (TABLE_SHARE*) (dummy_table+1);
-  sp_query_arena= (Query_arena *) (dummy_table->s + 1);
+  sp_query_arena= new(dummy_table->s + 1) Query_arena();
   memset(&sp_mem_root, 0, sizeof(sp_mem_root));
 }
 
@@ -5051,13 +5049,19 @@ bool Item_ref_null_helper::get_date(THD *thd, MYSQL_TIME *ltime,
   @param resolved_item   item which was resolved in outer SELECT(for warning)
   @param mark_item       item which should be marked (can be differ in case of
                          substitution)
+  @param suppress_warning_output  flag specifying whether to suppress output of
+                                  a warning message
 */
 
 static bool mark_as_dependent(THD *thd, SELECT_LEX *last, SELECT_LEX *current,
                               Item_ident *resolved_item,
-                              Item_ident *mark_item)
+                              Item_ident *mark_item,
+                              bool suppress_warning_output)
 {
   DBUG_ENTER("mark_as_dependent");
+  DBUG_PRINT("info", ("current select: %d (%p)  last: %d (%p)",
+                      current->select_number, current,
+                      (last ? last->select_number : 0), last));
 
   /* store pointer on SELECT_LEX from which item is dependent */
   if (mark_item && mark_item->can_be_depended)
@@ -5068,7 +5072,7 @@ static bool mark_as_dependent(THD *thd, SELECT_LEX *last, SELECT_LEX *current,
   if (current->mark_as_dependent(thd, last,
                                  /** resolved_item psergey-thu **/ mark_item))
     DBUG_RETURN(TRUE);
-  if (thd->lex->describe & DESCRIBE_EXTENDED)
+  if ((thd->lex->describe & DESCRIBE_EXTENDED) && !suppress_warning_output)
   {
     const char *db_name= (resolved_item->db_name.str ?
                           resolved_item->db_name.str : "");
@@ -5097,6 +5101,8 @@ static bool mark_as_dependent(THD *thd, SELECT_LEX *last, SELECT_LEX *current,
   @param found_item      Item which was found during resolving (if resolved
                          identifier belongs to VIEW)
   @param resolved_item   Identifier which was resolved
+  @param suppress_warning_output  flag specifying whether to suppress output of
+                                  a warning message
 
   @note
     We have to mark all items between current_sel (including) and
@@ -5109,7 +5115,8 @@ static bool mark_as_dependent(THD *thd, SELECT_LEX *last, SELECT_LEX *current,
 void mark_select_range_as_dependent(THD *thd, SELECT_LEX *last_select,
                                     SELECT_LEX *current_sel,
                                     Field *found_field, Item *found_item,
-                                    Item_ident *resolved_item)
+                                    Item_ident *resolved_item,
+                                    bool suppress_warning_output)
 {
   /*
     Go from current SELECT to SELECT where field was resolved (it
@@ -5144,7 +5151,7 @@ void mark_select_range_as_dependent(THD *thd, SELECT_LEX *last_select,
       found_field->table->map;
   prev_subselect_item->const_item_cache= 0;
   mark_as_dependent(thd, last_select, current_sel, resolved_item,
-                    dependent);
+                    dependent, suppress_warning_output);
 }
 
 
@@ -5610,7 +5617,7 @@ Item_field::fix_outer_field(THD *thd, Field **from_field, Item **reference)
                               context->select_lex, this,
                               ((ref_type == REF_ITEM ||
                                 ref_type == FIELD_ITEM) ?
-                               (Item_ident*) (*reference) : 0));
+                               (Item_ident*) (*reference) : 0), false);
             return 0;
           }
         }
@@ -5622,7 +5629,7 @@ Item_field::fix_outer_field(THD *thd, Field **from_field, Item **reference)
                             context->select_lex, this,
                             ((ref_type == REF_ITEM || ref_type == FIELD_ITEM) ?
                              (Item_ident*) (*reference) :
-                             0));
+                             0), false);
           if (thd->lex->in_sum_func &&
               thd->lex->in_sum_func->nest_level >= select->nest_level)
           {
@@ -5736,7 +5743,7 @@ Item_field::fix_outer_field(THD *thd, Field **from_field, Item **reference)
     set_max_sum_func_level(thd, select);
     mark_as_dependent(thd, last_checked_context->select_lex,
                       context->select_lex, rf,
-                      rf);
+                      rf, false);
 
     return 0;
   }
@@ -5749,7 +5756,7 @@ Item_field::fix_outer_field(THD *thd, Field **from_field, Item **reference)
     set_max_sum_func_level(thd, select);
     mark_as_dependent(thd, last_checked_context->select_lex,
                       context->select_lex,
-                      this, (Item_ident*)*reference);
+                      this, (Item_ident*)*reference, false);
     if (last_checked_context->select_lex->having_fix_field)
     {
       Item_ref *rf;
@@ -6272,12 +6279,14 @@ Item *Item_field::replace_equal_field(THD *thd, uchar *arg)
                   item_equal->compare_type_handler()->cmp_type());
       return const_item2;
     }
-    Item_field *subst= 
-      (Item_field *)(item_equal->get_first(param->context_tab, this));
+    Item_ident *subst=
+      (Item_ident *) (item_equal->get_first(param->context_tab, this));
     if (subst)
-      subst= (Item_field *) (subst->real_item());
-    if (subst && !field->eq(subst->field))
-      return subst;
+    {
+      Item_field *subst2= (Item_field *) (subst->real_item());
+      if (subst2 && !field->eq(subst2->field))
+      return subst2;
+    }
   }
   return this;
 }
@@ -7723,7 +7732,7 @@ public:
         if (tbl->table == item->field->table)
         {
           if (sel != current_select)
-            mark_as_dependent(thd, sel, current_select, item, item);
+            mark_as_dependent(thd, sel, current_select, item, item, false);
           return;
         }
       }
@@ -7919,7 +7928,7 @@ bool Item_ref::fix_fields(THD *thd, Item **reference)
                               ((refer_type == REF_ITEM ||
                                 refer_type == FIELD_ITEM) ?
                                (Item_ident*) (*reference) :
-                               0));
+                               0), false);
             /*
               view reference found, we substituted it instead of this
               Item, so can quit
@@ -7969,7 +7978,7 @@ bool Item_ref::fix_fields(THD *thd, Item **reference)
           goto error;
         thd->change_item_tree(reference, fld);
         mark_as_dependent(thd, last_checked_context->select_lex,
-                          current_sel, fld, fld);
+                          current_sel, fld, fld, false);
         /*
           A reference is resolved to a nest level that's outer or the same as
           the nest level of the enclosing set function : adjust the value of
@@ -7992,7 +8001,7 @@ bool Item_ref::fix_fields(THD *thd, Item **reference)
       /* Should be checked in resolve_ref_in_select_and_group(). */
       DBUG_ASSERT(*ref && (*ref)->is_fixed());
       mark_as_dependent(thd, last_checked_context->select_lex,
-                        context->select_lex, this, this);
+                        context->select_lex, this, this, false);
       /*
         A reference is resolved to a nest level that's outer or the same as
         the nest level of the enclosing set function : adjust the value of

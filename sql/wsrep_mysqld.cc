@@ -133,6 +133,18 @@ uint  wsrep_ignore_apply_errors= 0;
  */
 
 /*
+ * Cached variables
+ */
+
+// Whether the Galera write-set replication provider is set
+// wsrep_provider && strcmp(wsrep_provider, WSREP_NONE)
+bool WSREP_PROVIDER_EXISTS_;
+
+// Whether the Galera write-set replication is enabled
+// global_system_variables.wsrep_on && WSREP_PROVIDER_EXISTS_
+bool WSREP_ON_;
+
+/*
  * Other wsrep global variables.
  */
 
@@ -1317,6 +1329,32 @@ exit:
     }
 
     return fail;
+}
+
+bool wsrep_reload_ssl()
+{
+  try
+  {
+    std::string opts= Wsrep_server_state::instance().provider().options();
+    if (opts.find("socket.ssl_reload") == std::string::npos)
+    {
+      WSREP_DEBUG("Option `socket.ssl_reload` not found in parameters.");
+      return false;
+    }
+    const std::string reload_ssl_param("socket.ssl_reload=1");
+    enum wsrep::provider::status ret= Wsrep_server_state::instance().provider().options(reload_ssl_param);
+    if (ret)
+    {
+      WSREP_ERROR("Set options returned %d", ret);
+      return true;
+    }
+    return false;
+  }
+  catch (...)
+  {
+    WSREP_ERROR("Failed to get provider options");
+    return true;
+  }
 }
 
 /*!

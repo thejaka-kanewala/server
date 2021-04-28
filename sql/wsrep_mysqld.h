@@ -21,6 +21,7 @@
 
 #ifdef WITH_WSREP
 extern bool WSREP_ON_;
+extern bool WSREP_PROVIDER_EXISTS_;
 
 #include <mysql/plugin.h>
 #include "mysql/service_wsrep.h"
@@ -217,6 +218,7 @@ extern void wsrep_last_committed_id (wsrep_gtid_t* gtid);
 extern int  wsrep_check_opts();
 extern void wsrep_prepend_PATH (const char* path);
 extern bool wsrep_append_fk_parent_table(THD* thd, TABLE_LIST* table, wsrep::key_array* keys);
+extern bool wsrep_reload_ssl();
 
 /* Other global variables */
 extern wsrep_seqno_t wsrep_locked_seqno;
@@ -225,7 +227,8 @@ extern wsrep_seqno_t wsrep_locked_seqno;
 /* use xxxxxx_NNULL macros when thd pointer is guaranteed to be non-null to
  * avoid compiler warnings (GCC 6 and later) */
 
-#define WSREP_NNULL(thd) (WSREP_ON && thd->variables.wsrep_on)
+#define WSREP_NNULL(thd) \
+  (WSREP_PROVIDER_EXISTS_ && thd->variables.wsrep_on)
 
 #define WSREP(thd) \
   (thd && WSREP_NNULL(thd))
@@ -282,8 +285,7 @@ void WSREP_LOG(void (*fun)(const char* fmt, ...), const char* fmt, ...);
     WSREP_INFO("context: %s:%d", __FILE__, __LINE__); \
   }
 
-#define WSREP_PROVIDER_EXISTS                                                  \
-  (wsrep_provider && strncasecmp(wsrep_provider, WSREP_NONE, FN_REFLEN))
+#define WSREP_PROVIDER_EXISTS (WSREP_PROVIDER_EXISTS_)
 
 static inline bool wsrep_cluster_address_exists()
 {

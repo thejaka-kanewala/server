@@ -40,13 +40,6 @@ Created 11/11/1995 Heikki Tuuri
 #include "log0crypt.h"
 #include "srv0mon.h"
 #include "fil0pagecompress.h"
-#ifdef UNIV_LINUX
-/* include defs for CPU time priority settings */
-#include <unistd.h>
-#include <sys/syscall.h>
-#include <sys/time.h>
-#include <sys/resource.h>
-#endif /* UNIV_LINUX */
 #ifdef HAVE_LZO
 # include "lzo/lzo1x.h"
 #elif defined HAVE_SNAPPY
@@ -1905,6 +1898,20 @@ ATTRIBUTE_COLD static void buf_flush_sync_for_checkpoint(lsn_t lsn)
   }
 }
 
+/** Check if the adpative flushing threshold is recommended based on
+redo log capacity filled threshold.
+@param oldest_lsn     buf_pool.get_oldest_modification()
+@return true if adaptive flushing is recommended. */
+static bool af_needed_for_redo(lsn_t oldest_lsn)
+{
+  lsn_t age= (log_sys.get_lsn() - oldest_lsn);
+  lsn_t af_lwm= static_cast<lsn_t>(srv_adaptive_flushing_lwm *
+   static_cast<double>(log_sys.log_capacity) / 100);
+
+  /* if age > af_lwm adaptive flushing is recommended */
+  return (age > af_lwm);
+}
+
 /*********************************************************************//**
 Calculates if flushing is required based on redo generation rate.
 @return percent of io_capacity to flush to manage redo space */
@@ -2083,21 +2090,6 @@ static os_thread_ret_t DECLARE_THREAD(buf_flush_page_cleaner)(void*)
   ut_ad(!srv_read_only_mode);
   ut_ad(buf_page_cleaner_is_active);
 
-#ifdef UNIV_DEBUG_THREAD_CREATION
-  ib::info() << "page_cleaner thread running, id "
-             << os_thread_get_curr_id();
-#endif /* UNIV_DEBUG_THREAD_CREATION */
-#ifdef UNIV_LINUX
-  /* linux might be able to set different setting for each thread.
-  worth to try to set high priority for the page cleaner thread */
-  const pid_t tid= static_cast<pid_t>(syscall(SYS_gettid));
-  setpriority(PRIO_PROCESS, tid, -20);
-  if (getpriority(PRIO_PROCESS, tid) != -20)
-    ib::info() << "If the mysqld execution user is authorized,"
-                  " page cleaner thread priority can be changed."
-                  " See the man page of setpriority().";
-#endif /* UNIV_LINUX */
-
   ulint last_pages= 0;
   timespec abstime;
   set_timespec(abstime, 1);
@@ -2170,9 +2162,14 @@ unemployed:
     const double dirty_pct= double(dirty_blocks) * 100.0 /
       double(UT_LIST_GET_LEN(buf_pool.LRU) + UT_LIST_GET_LEN(buf_pool.free));
 
+    const lsn_t oldest_lsn= buf_pool.get_oldest_modified()
+      ->oldest_modification();
+    ut_ad(oldest_lsn);
+
     bool idle_flush= false;
 
     if (lsn_limit);
+    else if (af_needed_for_redo(oldest_lsn));
     else if (srv_max_dirty_pages_pct_lwm != 0.0)
     {
       const ulint activity_count= srv_get_activity_count();
@@ -2194,10 +2191,6 @@ unemployed:
     }
     else if (dirty_pct < srv_max_buf_pool_modified_pct)
       goto unemployed;
-
-    const lsn_t oldest_lsn= buf_pool.get_oldest_modified()
-      ->oldest_modification();
-    ut_ad(oldest_lsn);
 
     if (UNIV_UNLIKELY(lsn_limit != 0) && oldest_lsn >= lsn_limit)
       buf_flush_sync_lsn= 0;
