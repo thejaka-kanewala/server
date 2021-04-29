@@ -1863,6 +1863,7 @@ bool THD::notify_shared_lock(MDL_context_owner *ctx_in_use,
 
   if (needs_thr_lock_abort)
   {
+    bool unlock_needed= true;
     mysql_mutex_lock(&in_use->LOCK_thd_data);
     /* If not already dying */
     if (in_use->killed != KILL_CONNECTION_HARD)
@@ -1885,12 +1886,14 @@ bool THD::notify_shared_lock(MDL_context_owner *ctx_in_use,
           {
             WSREP_DEBUG("remove_table_from_cache: %llu",
                         (unsigned long long) this->real_id);
-            wsrep_abort_thd((void *)this, (void *)in_use, FALSE);
+            mysql_mutex_unlock(&in_use->LOCK_thd_data);
+            unlock_needed= false;
+            wsrep_abort_thd((void *)this, (void *)in_use, FALSE, KILL_QUERY);
           }
         }
       }
     }
-    mysql_mutex_unlock(&in_use->LOCK_thd_data);
+    if (unlock_needed) mysql_mutex_unlock(&in_use->LOCK_thd_data);
   }
   DBUG_RETURN(signalled);
 }
