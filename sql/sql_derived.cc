@@ -85,7 +85,7 @@ mysql_handle_derived(LEX *lex, uint phases)
       break;
     if (!(phases & phase_flag))
       continue;
-    if (phase_flag >= DT_CREATE && !thd->fill_derived_tables())
+    if (phase_flag >= DT_CREATE && thd->stmt_arena->is_stmt_prepare())
       break;
 
     for (SELECT_LEX *sl= lex->all_selects_list;
@@ -193,7 +193,7 @@ mysql_handle_single_derived(LEX *lex, TABLE_LIST *derived, uint phases)
     if (phase_flag != DT_PREPARE &&
         !(allowed_phases & phase_flag))
       continue;
-    if (phase_flag >= DT_CREATE && !thd->fill_derived_tables())
+    if (phase_flag >= DT_CREATE && thd->stmt_arena->is_stmt_prepare())
       break;
 
     if ((res= (*processors[phase])(lex->thd, lex, derived)))

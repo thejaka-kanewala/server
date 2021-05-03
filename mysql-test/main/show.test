@@ -1,8 +1,8 @@
-#
-# MDEV-9538 Server crashes in check_show_access on SHOW STATISTICS
-# MDEV-9539 Server crashes in make_columns_old_format on SHOW GEOMETRY_COLUMNS
-# MDEV-9540 SHOW SPATIAL_REF_SYS and SHOW SYSTEM_VARIABLES return empty results with numerous warnings
-#
+--echo #
+--echo # MDEV-9538 Server crashes in check_show_access on SHOW STATISTICS
+--echo # MDEV-9539 Server crashes in make_columns_old_format on SHOW GEOMETRY_COLUMNS
+--echo # MDEV-9540 SHOW SPATIAL_REF_SYS and SHOW SYSTEM_VARIABLES return empty results with numerous warnings
+--echo #
 --error ER_PARSE_ERROR
 show statistics;
 --error ER_PARSE_ERROR
@@ -13,3 +13,15 @@ show system_variables;
 show geometry_columns;
 --error ER_PARSE_ERROR
 show nonexistent;
+
+--echo #
+--echo # MDEV-21603 Crashing SHOW TABLES with derived table in WHERE condition
+--echo #
+set @@in_predicate_conversion_threshold=10;
+use mysql;
+show tables where tables_in_mysql in ('1','2','3','4','5','6','7','8','9');
+show tables where tables_in_mysql in ('1','2','3','4','5','6','7','8','9','boom');
+
+--echo #
+--echo # End of 10.3 tests
+--echo #

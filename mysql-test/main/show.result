@@ -1,3 +1,8 @@
+#
+# MDEV-9538 Server crashes in check_show_access on SHOW STATISTICS
+# MDEV-9539 Server crashes in make_columns_old_format on SHOW GEOMETRY_COLUMNS
+# MDEV-9540 SHOW SPATIAL_REF_SYS and SHOW SYSTEM_VARIABLES return empty results with numerous warnings
+#
 show statistics;
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'statistics' at line 1
 show spatial_ref_sys
@@ -10,3 +15,15 @@ show geometry_columns;
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'geometry_columns' at line 1
 show nonexistent;
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'nonexistent' at line 1
+#
+# MDEV-21603 Crashing SHOW TABLES with derived table in WHERE condition
+#
+set @@in_predicate_conversion_threshold=10;
+use mysql;
+show tables where tables_in_mysql in ('1','2','3','4','5','6','7','8','9');
+Tables_in_mysql
+show tables where tables_in_mysql in ('1','2','3','4','5','6','7','8','9','boom');
+Tables_in_mysql
+#
+# End of 10.3 tests
+#
