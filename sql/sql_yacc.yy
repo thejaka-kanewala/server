@@ -340,14 +340,11 @@ bool my_yyoverflow(short **a, YYSTYPE **b, size_t *yystacksize);
   We should not introduce any further shift/reduce conflicts.
 */
 
-/* Start SQL_MODE_DEFAULT_SPECIFIC */
+%ifdef MARIADB
 %expect 67
-/* End SQL_MODE_DEFAULT_SPECIFIC */
-
-
-/* Start SQL_MODE_ORACLE_SPECIFIC
+%else
 %expect 69
-End SQL_MODE_ORACLE_SPECIFIC */
+%endif
 
 
 /*
@@ -1765,7 +1762,7 @@ End SQL_MODE_ORACLE_SPECIFIC */
 %type <vers_history_point> history_point
 %type <vers_column_versioning> with_or_without_system
 
-/* Start SQL_MODE_DEFAULT_SPECIFIC */
+%ifdef MARIADB
 %type <NONE> sp_tail_standalone
 %type <NONE> sp_unlabeled_block_not_atomic
 %type <NONE> sp_proc_stmt_in_returns_clause
@@ -1777,10 +1774,7 @@ End SQL_MODE_ORACLE_SPECIFIC */
 %type <spblock> sp_decl_variable_list
 %type <spblock> sp_decl_variable_list_anchored
 %type <kwd> reserved_keyword_udt_param_type
-/* End SQL_MODE_DEFAULT_SPECIFIC */
-
-
-/* Start SQL_MODE_ORACLE_SPECIFIC
+%else
 %type <NONE> set_assign
 %type <spvar_mode> sp_opt_inout
 %type <NONE> sp_tail_standalone
@@ -1815,7 +1809,7 @@ End SQL_MODE_ORACLE_SPECIFIC */
 %type <lex> package_routine_lex
 %type <lex> package_specification_function
 %type <lex> package_specification_procedure
-End SQL_MODE_ORACLE_SPECIFIC */
+%endif ORACLE
 
 %%
 
@@ -17795,7 +17789,7 @@ _empty:
           /* Empty */
         ;
 
-/* Start SQL_MODE_DEFAULT_SPECIFIC */
+%ifdef MARIADB
 
 
 statement:
@@ -18194,10 +18188,10 @@ sp_unlabeled_block_not_atomic:
         ;
 
 
-/* End SQL_MODE_DEFAULT_SPECIFIC */
+%endif MARIADB
 
 
-/* Start SQL_MODE_ORACLE_SPECIFIC
+%ifdef ORACLE
 
 statement:
           verb_clause
@@ -19206,7 +19200,7 @@ sp_block_statements_and_exceptions:
           }
         ;
 
-End SQL_MODE_ORACLE_SPECIFIC */
+%endif ORACLE
 
 /**
   @} (end of group Parser)
