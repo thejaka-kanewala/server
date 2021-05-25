@@ -1152,7 +1152,7 @@ public:
   const uchar *ptr_in_record(const uchar *record) const
   {
     my_ptrdiff_t l_offset= (my_ptrdiff_t) (ptr -  table->record[0]);
-    DBUG_ASSERT(l_offset >= 0 && table->s->rec_buff_length - l_offset > 0);
+//    DBUG_ASSERT(l_offset >= 0 && table->s->rec_buff_length - l_offset > 0);
     return record + l_offset;
   }
   virtual int set_default();
@@ -2975,7 +2975,10 @@ public:
   void sql_type(String &str) const override final;
   uint size_of() const override final { return sizeof *this; }
   uint32 max_display_length() const override final { return 4; }
-  void move_field_offset(my_ptrdiff_t ptr_diff) override final {}
+//  void move_field_offset(my_ptrdiff_t ptr_diff) override final 
+//  {
+    //ptr=ADD_TO_PTR(ptr,ptr_diff, uchar*);
+//  }
   bool can_optimize_keypart_ref(const Item_bool_func *cond,
                                 const Item *item) const override final
   {
