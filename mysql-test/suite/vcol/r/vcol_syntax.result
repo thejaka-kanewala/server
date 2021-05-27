@@ -88,3 +88,23 @@ create table t1 (x int, y int default test2.t1.x);
 ERROR 42S22: Unknown column '`test2`.`t1`.`x`' in 'DEFAULT'
 create table t1 (x int, check (test2.t1.x > 0));
 ERROR 42S22: Unknown column '`test2`.`t1`.`x`' in 'CHECK'
+#
+# MDEV-25672 table alias from previous statement interferes later commands
+#
+create table t1 (
+id int not null auto_increment primary key,
+order_date_time datetime not null,
+order_date date generated always as (convert(order_date_time, date)),
+language_id binary(16) null
+);
+update t1 as tx set order_date= null;
+alter table t1 modify column language_id binary(16) not null;
+drop table t1;
+#
+# MDEV-24176 Server crashes after insert in the table with virtual column generated using date_format() and if()
+#
+create table t1 (d1 date not null, d2 date not null,
+gd text as (concat(d1,if(d1 <> d2, date_format(d2, 'to %y-%m-%d '), ''))) );
+insert into t1(d1,d2) values
+('2020-09-01','2020-09-01'),('2020-05-01','2020-09-01');
+drop table t1;
