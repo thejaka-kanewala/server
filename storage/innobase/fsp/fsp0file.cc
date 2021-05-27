@@ -805,7 +805,7 @@ static char *read_link_file(const char *link_filepath)
     {
       /* Trim whitespace from end of filepath */
       len--;
-      while (filepath[len] >= 0 && filepath[len] <= 0x20)
+      while (static_cast<byte>(filepath[len]) <= 0x20)
         filepath[len--]= 0;
       if (!*filepath)
         return nullptr;
