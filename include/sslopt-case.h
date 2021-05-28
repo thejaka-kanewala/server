@@ -34,7 +34,7 @@
       /* CRL does not work with WolfSSL (server) */
       opt_ssl_crl= NULL;
 #endif
-#ifndef _WIN32
+#if !defined(_WIN32) || !defined(LIBMARIADB)
       /* CRL_PATH does not work with WolfSSL (server) and GnuTLS (client) */
       opt_ssl_crlpath= NULL;
 #endif
