@@ -1395,7 +1395,7 @@ inline bool fil_space_t::acquire_if_not_stopped()
   return UNIV_LIKELY(!(n & CLOSING)) || prepare(true);
 }
 
-/** Return the next tablespace from rotation_list.
+/** Return the next tablespace from default_encrypt_tables.
 @param space   previous tablespace (NULL to start from the start)
 @param recheck whether the removal condition needs to be rechecked after
 the encryption parameters were changed
@@ -1403,36 +1403,38 @@ the encryption parameters were changed
 @return the next tablespace to process (n_pending_ops incremented)
 @retval fil_system.temp_space if there is no work to do
 @retval nullptr upon reaching the end of the iteration */
-inline fil_space_t *fil_system_t::keyrotate_next(fil_space_t *space,
-                                                 bool recheck, bool encrypt)
+inline fil_space_t *fil_system_t::default_encrypt_next(
+  fil_space_t *space, bool recheck, bool encrypt)
 {
   mysql_mutex_assert_owner(&mutex);
 
-  auto it= space && space->is_in_rotation_list
+  auto it= space && space->is_in_default_encrypt
                ? sized_ilist<fil_space_t, rotation_list_tag_t>::iterator(space)
-               : rotation_list.begin();
-  const auto end= rotation_list.end();
+               : default_encrypt_tables.begin();
+  const auto end= default_encrypt_tables.end();
 
   if (space)
   {
     const bool released= !space->release();
 
-    if (space->is_in_rotation_list)
+    if (space->is_in_default_encrypt)
     {
       while (++it != end &&
              (!UT_LIST_GET_LEN(it->chain) || it->is_stopping()));
 
       /* If one of the encryption threads already started the encryption
-      of the table then don't remove the unencrypted spaces from rotation list
+      of the table then don't remove the unencrypted spaces from
+      default encrypt list
 
       If there is a change in innodb_encrypt_tables variables value then
-      don't remove the last processed tablespace from the rotation list. */
+      don't remove the last processed tablespace from the default
+      encrypt list. */
       if (released && (!recheck || space->crypt_data) &&
           !encrypt == !srv_encrypt_tables)
       {
-        ut_a(!rotation_list.empty());
-        rotation_list.remove(*space);
-        space->is_in_rotation_list= false;
+        ut_a(!default_encrypt_tables.empty());
+        default_encrypt_tables.remove(*space);
+        space->is_in_default_encrypt= false;
       }
     }
   }
@@ -1468,9 +1470,9 @@ space_list_t::iterator fil_space_t::next(space_list_t::iterator space,
 
   if (!srv_fil_crypt_rotate_key_age)
   {
-    fil_space_t *next_space= fil_system.keyrotate_next(
-        space != fil_system.space_list.end() ? &*space : nullptr, recheck,
-        encrypt);
+    fil_space_t *next_space= fil_system.default_encrypt_next(
+      space != fil_system.space_list.end() ? &*space : nullptr,
+      recheck, encrypt);
     space= next_space
       ? space_list_t::iterator(next_space)
       : fil_system.space_list.end();
@@ -2172,15 +2174,15 @@ void fil_crypt_set_thread_cnt(const uint new_cnt)
 	mysql_mutex_unlock(&fil_crypt_threads_mutex);
 }
 
-/** Initialize the tablespace rotation_list
+/** Initialize the tablespace default encrypt list
 if innodb_encryption_rotate_key_age=0. */
-static void fil_crypt_rotation_list_fill()
+static void fil_crypt_default_encrypt_tables_fill()
 {
 	mysql_mutex_assert_owner(&fil_system.mutex);
 
 	for (fil_space_t& space : fil_system.space_list) {
 		if (space.purpose != FIL_TYPE_TABLESPACE
-		    || space.is_in_rotation_list
+		    || space.is_in_default_encrypt
 		    || UT_LIST_GET_LEN(space.chain) == 0
 		    || !space.acquire_if_not_stopped()) {
 			continue;
@@ -2211,8 +2213,8 @@ static void fil_crypt_rotation_list_fill()
 			}
 		}
 
-		fil_system.rotation_list.push_back(space);
-		space.is_in_rotation_list = true;
+		fil_system.default_encrypt_tables.push_back(space);
+		space.is_in_default_encrypt = true;
 next:
 		space.release();
 	}
@@ -2227,7 +2229,7 @@ void fil_crypt_set_rotate_key_age(uint val)
   mysql_mutex_lock(&fil_system.mutex);
   srv_fil_crypt_rotate_key_age= val;
   if (val == 0)
-    fil_crypt_rotation_list_fill();
+    fil_crypt_default_encrypt_tables_fill();
   mysql_mutex_unlock(&fil_system.mutex);
   pthread_cond_broadcast(&fil_crypt_threads_cond);
   mysql_mutex_unlock(&fil_crypt_threads_mutex);
@@ -2255,7 +2257,7 @@ void fil_crypt_set_encrypt_tables(ulong val)
   srv_encrypt_tables= val;
 
   if (srv_fil_crypt_rotate_key_age == 0)
-    fil_crypt_rotation_list_fill();
+    fil_crypt_default_encrypt_tables_fill();
 
   mysql_mutex_unlock(&fil_system.mutex);
 
