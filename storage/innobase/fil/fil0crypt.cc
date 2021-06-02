@@ -1409,10 +1409,11 @@ inline fil_space_t *fil_system_t::default_encrypt_next(
              (!UT_LIST_GET_LEN(it->chain) || it->is_stopping()));
 
       /* If one of the encryption threads already started the encryption
-      of the table then don't remove the unencrypted spaces from rotation list
+      of the table then don't remove the unencrypted spaces from default encrypt
+      list.
 
       If there is a change in innodb_encrypt_tables variables value then
-      don't remove the last processed tablespace from the rotation list. */
+      don't remove the last processed tablespace from the default encrypt list. */
       if (released && (!recheck || space->crypt_data) &&
           !encrypt == !srv_encrypt_tables)
       {
@@ -1422,12 +1423,21 @@ inline fil_space_t *fil_system_t::default_encrypt_next(
       }
     }
   }
+  else if (it->is_stopping())
+  {
+    /* Find the next suitable default encrypt table if
+    beginning of default_encrypt_tables list has stop flag
+    enabled */
+    while (++it != end &&
+           (!UT_LIST_GET_LEN(it->chain) || it->is_stopping()));
+  }
 
   if (it == end)
     return NULL;
 
   space= &*it;
   space->n_pending_ops++;
+  ut_ad(!space->is_stopping());
   return space;
 }
 
