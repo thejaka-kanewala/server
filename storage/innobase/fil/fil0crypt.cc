@@ -82,6 +82,9 @@ static uint n_fil_crypt_iops_allocated;
 static fil_crypt_stat_t crypt_stat;
 static mysql_mutex_t crypt_stat_mutex;
 
+/** Whether the encryption plugin does key rotation */
+static std::atomic<bool> srv_encrypt_rotate;
+
 /** Wake up the encryption threads */
 void fil_crypt_threads_signal(bool broadcast)
 {
@@ -134,6 +137,15 @@ fil_space_crypt_t::key_get_latest_version(void)
 
 	if (is_key_found()) {
 		key_version = encryption_key_get_latest_version(key_id);
+		/* InnoDB does dirty read of srv_fil_crypt_rotate_key_age.
+		It doesn't matter because srv_encrypt_rotate
+		can set to true only once */
+		if (!srv_encrypt_rotate
+		    && key_version > srv_fil_crypt_rotate_key_age) {
+			srv_encrypt_rotate.store(
+				true, std::memory_order_relaxed);
+		}
+
 		srv_stats.n_key_requests.inc();
 		key_found = key_version;
 	}
@@ -1382,6 +1394,12 @@ static void fil_crypt_return_iops(rotate_thread_t *state, bool wake= true)
   fil_crypt_update_total_stat(state);
 }
 
+bool fil_crypt_must_default_encrypt()
+{
+  return !srv_fil_crypt_rotate_key_age
+         || !srv_encrypt_rotate.load(std::memory_order_relaxed);
+}
+
 /** Acquire a tablespace reference.
 @return whether a tablespace reference was successfully acquired */
 inline bool fil_space_t::acquire_if_not_stopped()
@@ -1476,7 +1494,7 @@ space_list_t::iterator fil_space_t::next(space_list_t::iterator space,
 {
   mysql_mutex_lock(&fil_system.mutex);
 
-  if (!srv_fil_crypt_rotate_key_age)
+  if (fil_crypt_must_default_encrypt())
   {
     fil_space_t *next_space= fil_system.default_encrypt_next(
       space != fil_system.space_list.end() ? &*space : nullptr,
@@ -2264,7 +2282,7 @@ void fil_crypt_set_encrypt_tables(ulong val)
   mysql_mutex_lock(&fil_system.mutex);
   srv_encrypt_tables= val;
 
-  if (srv_fil_crypt_rotate_key_age == 0)
+  if (fil_crypt_must_default_encrypt())
     fil_crypt_default_encrypt_tables_fill();
 
   mysql_mutex_unlock(&fil_system.mutex);

@@ -996,8 +996,7 @@ fil_space_t *fil_space_t::create(ulint id, ulint flags,
 	const bool rotate= purpose == FIL_TYPE_TABLESPACE
 		&& (mode == FIL_ENCRYPTION_ON || mode == FIL_ENCRYPTION_OFF
 		    || srv_encrypt_tables)
-		&& !srv_fil_crypt_rotate_key_age
-		&& srv_n_fil_crypt_threads_started;
+		&& fil_crypt_must_default_encrypt();
 
 	if (rotate) {
 		fil_system.default_encrypt_tables.push_back(*space);
@@ -1006,7 +1005,7 @@ fil_space_t *fil_space_t::create(ulint id, ulint flags,
 
 	mysql_mutex_unlock(&fil_system.mutex);
 
-	if (rotate) {
+	if (rotate && srv_n_fil_crypt_threads_started) {
 		fil_crypt_threads_signal();
 	}
 
