@@ -1,0 +1,35 @@
+--source include/have_binlog_format_row.inc
+
+--echo #
+--echo # Preparatory cleanup.
+--echo #
+--disable_warnings
+DROP TABLE IF EXISTS t1;
+--enable_warnings
+
+--echo #
+--echo # We need a fixed timestamp to avoid varying results.
+--echo #
+SET timestamp=1000000000;
+
+--echo #
+--echo # Delete all existing binary logs.
+--echo #
+RESET MASTER;
+
+CREATE TABLE t1 (a TEXT, ac TEXT COMPRESSED, b TINYTEXT, bc TINYTEXT COMPRESSED, c MEDIUMTEXT, cc MEDIUMTEXT COMPRESSED, d LONGTEXT, dc LONGTEXT COMPRESSED, e VARCHAR(10), ec VARCHAR(10) COMPRESSED);
+
+INSERT INTO t1 VALUES ('mya', 'myac', 'myb', 'mybc', 'myc', 'mycc', 'myd', 'mydc', 'mye', 'myec');
+
+FLUSH BINARY LOGS;
+
+--let $binlog= query_get_value(SHOW BINARY LOGS, Log_name, 1)
+--let $datadir= `SELECT @@datadir`
+
+--echo # Running mysqlbinlog --base64-output=decode-rows -vv <binlog>
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+--replace_regex /SQL_LOAD_MB-[0-9]-[0-9]/SQL_LOAD_MB-#-#/ /exec_time=[0-9]*/exec_time=#/ /end_log_pos [0-9]*/end_log_pos #/ /# at [0-9]*/# at #/ /Xid = [0-9]*/Xid = #/ /thread_id=[0-9]*/thread_id=#/ /table id [0-9]*/table id #/ /mapped to number [0-9]*/mapped to number #/ /server v [^ ]*/server v #.##.##/ /CRC32 0x[0-9a-f]*/CRC32 XXX/ /collation_server=[0-9]+/collation_server=X/ /character_set_client=[0-9]+/character_set_client=X/ /collation_connection=[0-9]+/collation_connection=X/
+--exec $MYSQL_BINLOG --base64-output=decode-rows -vv $datadir/$binlog
+
+# Cleanup
+DROP TABLE t1;
