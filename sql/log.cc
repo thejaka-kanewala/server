@@ -10630,6 +10630,8 @@ static my_bool binlog_recovery_info_handlerton(THD *, plugin_ref plugin,
     hton->binlog_recovery_info(engine_file_name, &engine_pos);
     if (engine_file_name[0])
     {
+      fprintf(stderr,"------Engine recovery file:%s pos:%llu\n",
+          engine_file_name, engine_pos);
       id_binlog= ha_offset_param->linfo->get_binlog_id(engine_file_name);
     }
   }
@@ -10669,6 +10671,7 @@ public:
   uint last_gtid_engines;
   uint last_gtid_engines_no_binlog;
   Binlog_offset last_gtid_coord; // <binlog id, binlog offset>
+  bool last_gtid_stmt_format;
   /*
     When true, it's semisync slave recovery mode
     rolls back transactions in doubt and wipes them off from binlog.
@@ -10968,6 +10971,7 @@ bool Recovery_context::roll_forward(MYSQL_BIN_LOG *binlog)
   File        file;
   bool enable_apply_event= false;
   Log_event *ev = 0;
+  bool replay_coord_seek_done= false;
 //#ifndef DBUG_OFF
   log_info_fname_record *binlog_fname_record=
     ptr_log_info->binlog_id_to_fname->at(replay_coordinate.first - 1);
@@ -11012,9 +11016,6 @@ bool Recovery_context::roll_forward(MYSQL_BIN_LOG *binlog)
       sql_print_error("%s", errmsg);
       goto err1;
     }
-    // TODO/Sujatha:
-    // optimize to see the replay binlog to the replay offset after FD is found/processed
-    //    Events in the range [FD->log_pos, replay_offset] are irrelevant
     while (total_to_replay > 0 &&
            (ev= Log_event::read_log_event(&log,
                                           rli->relay_log.description_event_for_exec,
@@ -11035,7 +11036,14 @@ bool Recovery_context::roll_forward(MYSQL_BIN_LOG *binlog)
       ev->thd= thd;
 
       if (typ == FORMAT_DESCRIPTION_EVENT)
+      {
         enable_apply_event= true;
+        if (!replay_coord_seek_done)
+        {
+          my_b_seek(&log, replay_coordinate.second);
+          replay_coord_seek_done= true;
+        }
+      }
 
       if (typ == GTID_EVENT)
       {
@@ -11046,7 +11054,7 @@ bool Recovery_context::roll_forward(MYSQL_BIN_LOG *binlog)
         if ((member= (xid_recovery_member *)
              my_hash_search(&replay_hash, (uchar*) &gtid, sizeof(gtid))))
         {
-          if (member->to_replay > 0 && 1 /* TODO: member->is_safe_to_replay */)
+          if (member->to_replay > 0 && member->row_format_only)
           {
             rli->recovery_binlog_offset= member->binlog_coord;
             enable_apply_event= true;
@@ -11131,6 +11139,7 @@ Recovery_context::Recovery_context(LOG_INFO *linfo_arg, MEM_ROOT *mem_root_arg,
   prev_event_pos(0),
   last_gtid_standalone(false), last_gtid_valid(false), last_gtid_no2pc(false),
   last_gtid_engines(0),
+  last_gtid_stmt_format(false),
   do_truncate(rpl_semi_sync_slave_enabled),
   truncate_validated(false), truncate_reset_done(false),
   truncate_set_in_1st(false), checkpoint_binlog_id(0),
@@ -11425,7 +11434,8 @@ bool Recovery_context::decide_or_assess(xid_recovery_member *member, int round,
       ptr_log_info->binlog_id_to_fname->at(member->binlog_coord.first - 1);
     member->binlog_file_name= binlog_fname_record->log_name;
     member->xid_log_pos= ev->log_pos;
-
+    if (last_gtid_stmt_format)
+      member->row_format_only= false;
     DBUG_ASSERT(member->xid_log_pos > last_gtid_coord.second);
   }
 
@@ -11694,6 +11704,11 @@ int TC_LOG_BINLOG::recover(LOG_INFO *linfo, const char *last_log_name,
           ctx.last_gtid_no2pc= true;
           ctx.update_binlog_unsafe_coord_if_needed();
         }
+        /* fall through */
+      case QUERY_COMPRESSED_EVENT:
+      case BEGIN_LOAD_QUERY_EVENT:
+      case EXECUTE_LOAD_QUERY_EVENT:
+        ctx.last_gtid_stmt_format= true;
         break;
 
       case XA_PREPARE_LOG_EVENT:
@@ -11731,6 +11746,7 @@ int TC_LOG_BINLOG::recover(LOG_INFO *linfo, const char *last_log_name,
         if (rpl_global_gtid_binlog_state.update_nolock(&ctx.last_gtid, false))
           goto err2;
         ctx.last_gtid_valid= false;
+        ctx.last_gtid_stmt_format= false;
       }
       ctx.prev_event_pos= ev->log_pos;
 #endif
