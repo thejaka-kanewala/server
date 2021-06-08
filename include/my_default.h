@@ -24,6 +24,7 @@ extern MYSQL_PLUGIN_IMPORT const char *my_defaults_extra_file;
 extern const char *my_defaults_group_suffix;
 extern MYSQL_PLUGIN_IMPORT const char *my_defaults_file;
 extern my_bool my_defaults_mark_files;
+extern int change_my_defaults_value;
 
 extern int get_defaults_options(char **argv);
 extern int my_load_defaults(const char *conf_file, const char **groups,
@@ -33,7 +34,6 @@ extern int load_defaults(const char *conf_file, const char **groups,
 extern void free_defaults(char **argv);
 extern void my_print_default_files(const char *conf_file);
 extern void print_defaults(const char *conf_file, const char **groups);
-
 
 /** Simplify load_defaults() common use */
 #define load_defaults_or_exit(A, B, C, D) switch (load_defaults(A, B, C, D)) { \

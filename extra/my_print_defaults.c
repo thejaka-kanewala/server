@@ -163,6 +163,12 @@ int main(int argc, char **argv)
   if (get_options(&argc,&argv))
     cleanup_and_exit(1);
 
+  /*
+    We now have my_defaults_file, my_defaults_group_suffix
+    and my_defaults_extra_file. Don't reset it.
+  */
+  change_my_defaults_value= 0;
+
   nargs= argc + 1;
   if (opt_mysqld)
     nargs+= array_elements(mysqld_groups);

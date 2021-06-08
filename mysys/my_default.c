@@ -59,6 +59,7 @@ my_bool my_no_defaults=FALSE, my_print_defaults= FALSE;
 const char *my_defaults_file=0;
 const char *my_defaults_group_suffix=0;
 const char *my_defaults_extra_file=0;
+int change_my_defaults_value=1;
 
 /* Which directories are searched for options (and in which order) */
 
@@ -284,6 +285,20 @@ int get_defaults_options(char **argv)
   static char file_buffer[FN_REFLEN];
   static char extra_file_buffer[FN_REFLEN];
   char **orig_argv= argv;
+  const char  *old_my_defaults_file, *old_my_defaults_group_suffix, *old_my_defaults_extra_file;
+
+  /*
+     To count the arguments correctly, we need to "reset" my_defaults*.
+     But in case of my_print_defaults, we already have the value in
+     my_defaults* which will be lost if we reset.
+     Hence, first save these values and then assign the old values again later.
+  */
+  if (!change_my_defaults_value)
+  {
+     old_my_defaults_file= my_defaults_file,
+     old_my_defaults_group_suffix= my_defaults_group_suffix,
+     old_my_defaults_extra_file= my_defaults_extra_file;
+  }
 
   argv++; /* Skip program name */
 
@@ -330,6 +345,13 @@ int get_defaults_options(char **argv)
   {
     my_realpath(file_buffer, my_defaults_file, MYF(0));
     my_defaults_file= file_buffer;
+  }
+
+  if (!change_my_defaults_value)
+  {
+    my_defaults_file= old_my_defaults_file;
+    my_defaults_group_suffix= old_my_defaults_group_suffix;
+    my_defaults_extra_file= old_my_defaults_extra_file;
   }
 
   return (int)(argv - orig_argv);
