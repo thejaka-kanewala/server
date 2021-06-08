@@ -21,7 +21,7 @@
 #include "sql_partition.h"      /* part_id_range, partition_element */
 #include "queues.h"             /* QUEUE */
 
-struct Ordered_blob_storage : public Sql_alloc
+struct Ordered_blob_storage
 {
   String blob;
   bool set_read_value;
@@ -151,7 +151,6 @@ private:
   partition_info *m_part_info;          // local reference to partition
   Field **m_part_field_array;           // Part field array locally to save acc
   uchar *m_ordered_rec_buffer;          // Row and key buffer for ord. idx scan
-  MEM_ROOT m_ordered_root;
   /*
     Current index.
     When used in key_rec_cmp: If clustered pk, index compare

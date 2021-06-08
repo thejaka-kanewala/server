@@ -5112,23 +5112,13 @@ bool ha_partition::init_record_priority_queue()
   alloc_len= used_parts * m_priority_queue_rec_len;
   /* Allocate a key for temporary use when setting up the scan. */
   alloc_len+= table_share->max_key_length;
+  Ordered_blob_storage **blob_storage;
+  Ordered_blob_storage *objs;
+  const size_t n_all= used_parts * table->s->blob_fields;
 
-  size_t storage_size;
-  if (table->s->blob_fields)
-  {
-    size_t block_size, prealloc_size;
-    storage_size= table->s->blob_fields * sizeof(Ordered_blob_storage *);
-    block_size= storage_size < sizeof(Ordered_blob_storage) ?
-      storage_size : sizeof(Ordered_blob_storage);
-    prealloc_size= alloc_len + used_parts * (storage_size +
-      table->s->blob_fields * sizeof(Ordered_blob_storage));
-    DBUG_ASSERT(block_size > 0);
-    init_prealloc_root(&m_ordered_root, block_size, prealloc_size, MYF(MY_WME));
-  }
-  else
-    init_prealloc_root(&m_ordered_root, alloc_len, 0, MYF(MY_WME));
-
-  if (!(m_ordered_rec_buffer= (uchar*) alloc_root(&m_ordered_root, alloc_len)))
+  if (!my_multi_malloc(MYF(MY_WME), &m_ordered_rec_buffer, alloc_len,
+                       &blob_storage, n_all * sizeof(Ordered_blob_storage *),
+                       &objs, n_all * sizeof(Ordered_blob_storage), NULL))
     DBUG_RETURN(true);
 
   /*
@@ -5147,17 +5137,14 @@ bool ha_partition::init_record_priority_queue()
     DBUG_PRINT("info", ("init rec-buf for part %u", i));
     if (table->s->blob_fields)
     {
-      Ordered_blob_storage **blob_storage= (Ordered_blob_storage **)
-        alloc_root(&m_ordered_root, storage_size);
-      if (!blob_storage)
-        DBUG_RETURN(true);
-      for (uint j= 0; j < table->s->blob_fields; ++j)
+      for (uint j= 0; j < table->s->blob_fields; ++j, ++objs)
       {
-        blob_storage[j]= new (&m_ordered_root) Ordered_blob_storage;
+        blob_storage[j]= new (objs) Ordered_blob_storage;
         if (!blob_storage[j])
           DBUG_RETURN(true);
       }
       *((Ordered_blob_storage ***) ptr)= blob_storage;
+      blob_storage+= table->s->blob_fields;
     }
     int2store(ptr + sizeof(String **), i);
     ptr+= m_priority_queue_rec_len;
@@ -5180,7 +5167,7 @@ bool ha_partition::init_record_priority_queue()
   if (init_queue(&m_queue, used_parts, ORDERED_PART_NUM_OFFSET,
                  0, cmp_func, cmp_arg, 0, 0))
   {
-    free_root(&m_ordered_root, MYF(MY_WME));
+    my_free(m_ordered_rec_buffer);
     m_ordered_rec_buffer= NULL;
     DBUG_RETURN(true);
   }
@@ -5212,7 +5199,7 @@ void ha_partition::destroy_record_priority_queue()
     }
 
     delete_queue(&m_queue);
-    free_root(&m_ordered_root, MYF(MY_WME));
+    my_free(m_ordered_rec_buffer);
     m_ordered_rec_buffer= NULL;
   }
   DBUG_VOID_RETURN;
