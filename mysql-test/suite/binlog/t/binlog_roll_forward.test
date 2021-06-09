@@ -1,0 +1,114 @@
+# B - sync_binlog
+# I - innodb_flush_log_at_trx_commit
+
+--source include/have_innodb.inc
+--source include/have_debug.inc
+--source include/have_binlog_format_row.inc
+
+RESET MASTER;
+
+--echo #
+--echo # Single transactional engine recovery.(B=1 I=0)
+--echo # On crash transaction in "Binlog - Yes InnoDB - No"
+--echo # The transaction 30 should be replayed from binlog
+--echo #
+
+SET GLOBAL sync_binlog=1;
+SET GLOBAL innodb_flush_log_at_trx_commit=3;
+CREATE TABLE t(f INT) ENGINE=INNODB;
+INSERT INTO t VALUES (10);
+INSERT INTO t VALUES (20);
+SET GLOBAL innodb_flush_log_at_trx_commit=0;
+
+SET GLOBAL debug_dbug="d,crash_before_engine_commit";
+--exec echo "wait" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+
+--error 2013
+INSERT INTO t VALUES (30);
+
+--source include/wait_until_disconnected.inc
+--let $_expect_file_name= $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--source include/start_mysqld.inc
+
+--echo #
+--echo # Three rows are expected
+--echo #
+SELECT * FROM t;
+
+--echo #
+--echo # Clean up
+--echo #
+DROP TABLE t;
+RESET MASTER;
+
+SHOW GLOBAL VARIABLES LIKE '%innodb_flush_log_at_trx_commit%';
+--echo #
+--echo # Single transactional engine semisync recovery.(B=1 I=0)
+--echo # On crash transaction in "Binlog - Yes InnoDB - No"
+--echo # The transaction 30 should be truncated from the binarylog.
+--echo #
+
+SET GLOBAL sync_binlog=1;
+SET GLOBAL innodb_flush_log_at_trx_commit=3;
+CREATE TABLE t(f INT) ENGINE=INNODB;
+INSERT INTO t VALUES (10);
+INSERT INTO t VALUES (20);
+SET GLOBAL innodb_flush_log_at_trx_commit=0;
+
+SET GLOBAL debug_dbug="d,crash_before_engine_commit";
+--exec echo "wait" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+
+--error 2013
+INSERT INTO t VALUES (30);
+
+--source include/wait_until_disconnected.inc
+
+--let $_expect_file_name= $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--let $restart_parameters = --rpl-semi-sync-slave-enabled=1
+--source include/start_mysqld.inc
+
+--echo #
+--echo # Two rows are expected
+--echo #
+SELECT * FROM t;
+DROP TABLE t;
+
+RESET MASTER;
+
+--echo #
+--echo # Multi transactional engine recovery.(B=1 I=0)
+--echo # On crash transaction in "Binlog - Yes InnoDB - No"
+--echo # The transaction 30 should be replayed from binlog
+--echo #
+
+SET GLOBAL sync_binlog=1;
+SET GLOBAL innodb_flush_log_at_trx_commit=3;
+CREATE TABLE t(f INT) ENGINE=INNODB;
+INSERT INTO t VALUES (10);
+INSERT INTO t VALUES (20);
+SET GLOBAL innodb_flush_log_at_trx_commit=0;
+INSERT INTO t VALUES (30);
+FLUSH LOGS;
+INSERT INTO t VALUES (40);
+FLUSH LOGS;
+
+SET GLOBAL debug_dbug="d,crash_before_engine_commit";
+--exec echo "wait" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+
+--error 2013
+INSERT INTO t VALUES (50);
+
+--source include/wait_until_disconnected.inc
+--let $_expect_file_name= $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--source include/start_mysqld.inc
+
+--echo #
+--echo # Three rows are expected
+--echo #
+SELECT * FROM t;
+
+--echo #
+--echo # Clean up
+--echo #
+DROP TABLE t;
+
