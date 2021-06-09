@@ -1,1 +1,1 @@
---plugin-load=$HA_ROCKSDB_SO 
+--plugin-load=$HA_ROCKSDB_SO

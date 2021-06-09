@@ -11372,12 +11372,6 @@ bool Recovery_context::decide_or_assess(xid_recovery_member *member, int round,
 {
   if (member)
   {
-    DBUG_EXECUTE_IF("binlog_truncate_partial_commit",
-                    if (last_gtid_engines == 2)
-                    {
-                      DBUG_ASSERT(member->in_engine_prepare > 0);
-                      member->in_engine_prepare= 1;
-                    });
     /*
       xid in doubt are resolved as follows:
       in_engine_prepare is compared agaist binlogged info to
@@ -11410,8 +11404,6 @@ bool Recovery_context::decide_or_assess(xid_recovery_member *member, int round,
       if (handle_maybe_committed(&member, round, ev, fdle))
         return true;
 
-      DBUG_EXECUTE_IF("binlog_truncate_partial_commit",
-                      member->in_engine_prepare= 2;);
     }
     else // member->in_engine_prepare == last_gtid_engines
     {

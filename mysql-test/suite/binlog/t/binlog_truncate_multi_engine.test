@@ -38,8 +38,6 @@ CREATE TABLE t2 (a INT PRIMARY KEY, b MEDIUMTEXT) ENGINE=rocksdb;
 # Hold off after one engine has committed.
 --let $shutdown_timeout=0
 --let $debug_sync_action = ""
-# Both debug_sync and debug-dbug are required to make sure Engines remember the commit state
-# debug_sync alone will not help.
 --let $restart_parameters = --rpl-semi-sync-slave-enabled=1
 --let $test_outcome= 2 rows should be present in both tables; no binlog truncation; one extra binlog file compare with A; number of binlogs at reconnect - 4
 --source binlog_truncate_multi_engine.inc
